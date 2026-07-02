@@ -25,7 +25,7 @@ export default async function AppLayout({
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
             <span className="font-semibold">FFM Tool</span>
-            <Nav />
+            <Nav role={profile?.role ?? undefined} />
           </div>
           <div className="flex items-center gap-3 text-sm">
             <span className="text-slate-500">

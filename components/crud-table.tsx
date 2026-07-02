@@ -77,10 +77,14 @@ export function CrudTable({
   table,
   columns,
   initial,
+  allowAdd = true,
+  allowDelete = true,
 }: {
   table: string;
   columns: Col[];
   initial: Row[];
+  allowAdd?: boolean;
+  allowDelete?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();

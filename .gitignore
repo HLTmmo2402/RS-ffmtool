@@ -35,3 +35,9 @@ yarn-error.log*
 *.xls
 # Dữ liệu gốc nhạy cảm (Excel credentials) di dời vào đây
 /_private/
+
+# Seed dữ liệu THẬT (chứa tên/địa chỉ/SĐT khách) — KHÔNG commit. seed_templates.sql thì OK.
+/supabase/seed_data.sql
+
+# File export đơn từ Cotik/sàn (chứa PII khách hàng) — KHÔNG commit
+/orders_*.csv

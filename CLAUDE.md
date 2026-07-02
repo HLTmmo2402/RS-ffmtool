@@ -11,13 +11,28 @@ nhận đơn TikTok Shop (TTS) / Amazon (AMZ) → xử lý design → đẩy **x
 Menprint, Twinklprint, ToAddit, Zootop Bear, Mango, A2K, Printway...) → xưởng sản xuất & ship →
 sync tracking về sàn. 1 điều phối FFM (Ngọc) + nhiều Seller (Hằng, Yến, Tú, Chi, Huệ, Huy, Thi, Nguyên...).
 
-## Trạng thái hiện tại: GIAI ĐOẠN THIẾT KẾ (chưa có code app)
-Repo hiện chỉ có **nguồn dữ liệu Excel** + **tài liệu thiết kế**. Chưa có codebase Next.js.
+## Trạng thái hiện tại: ĐÃ CÓ CODEBASE Next.js (MVP chạy + `npm run build` pass)
+App Next.js 14 (App Router) + Supabase đã dựng. Đọc `README.md` để chạy/deploy.
 
-- `docs/data-model.md` — thiết kế dữ liệu: ERD, vai trò từng bảng, **phân quyền**, pipeline trạng thái,
-  và các **giả định cần xác nhận**. Đọc file này trước khi bàn về schema.
-- `docs/schema.sql` — DDL Supabase/Postgres đầy đủ (bảng, view, RLS, trigger, activity_log). Là nguồn sự thật của mô hình dữ liệu.
-- 3 file Excel gốc (`RSA - FFM.xlsx`, `Báo giá FFM_RSA.xlsx`, `RSA - YCTT Topup - 04.2026.xlsx`) — dữ liệu để migrate.
+- **Code app**: `app/` (login, `(app)/orders` danh sách, `orders/[id]` chi tiết = FFM cập nhật fulfillment,
+  `orders/new` = sheet nhập, `orders/import`, `factories`, `templates`, `selling-accounts`, `finance` =
+  topup/hoàn/thanh toán + số dư (ffm/admin), `activity` = nhật ký, `admin/users`, `dashboard` = tiến độ/SLA/
+  hàng chờ xưởng); `lib/` (supabase clients, `lib/import/` = parser Cotik+RSA dùng chung); `components/`
+  (crud-table có allowAdd/allowDelete, nav theo role); `middleware.ts`. `npm run build` = 16 route, pass.
+- **DB**: `supabase/migrations/0001_init.sql` (= docs/schema.sql) + `0002_import_fields.sql` (cột import:
+  order_value, product_title, template_code, source_raw, pushed_at, seller_name_import…). Seed:
+  `seed_templates.sql` (85 template — commit được), `seed_data.sql` (~1500 đơn thật — **gitignored**, PII).
+- **Import 2 nguồn KHÔNG cần sửa file**: Cotik `.csv` + RSA-FFM `.xlsx`. Gộp đơn theo Order ID (bẫy lặp
+  dòng/đơn nhiều item đã xử lý), tách account/seller/factory, bóc size, suy item_status. Đơn đã có → chỉ
+  cập nhật cấp đơn, KHÔNG phá item/dữ liệu FFM.
+- **Sheet nhập đơn** `/orders/new`: chọn Template → auto-fill product_type/factory/dimension (snapshot); ẩn
+  Platform(=TTS)/Shipped by(=TikTok Shipping)/Seller(=user); 2 dòng trống tự sinh. Cột FFM cập nhật ở `/orders`.
+- **Phân quyền**: mặc định least-privilege (seller view=own); Admin tự set view=all cho ai được care hộ
+  (trang `/admin/users`). KHÔNG ép cứng.
+- Tài liệu: `docs/data-model.md`, `docs/schema.sql`, `Mô tả xây dựng web FFM.docx` (mô tả sản phẩm đầy đủ:
+  auto-fill Template, trạng thái tự động 3 trường, TikTok API — phần API/realtime là LỘ TRÌNH chưa làm).
+- 3 file Excel gốc ở `_private/` (gitignored). `scripts/` = tool phân tích/seed (Python + openpyxl/pandas):
+  `analyze_orders.py`, `inspect_rsa.py`, `gen_template_seed.py`, `gen_seed_data.py`.
 - `.claude/agents/reseacher.md` — subagent nghiên cứu (model opus).
 
 ## Stack đã chốt (khi bắt đầu code)
