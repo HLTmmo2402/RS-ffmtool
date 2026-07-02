@@ -41,8 +41,9 @@ phân quyền Role × 3 scope (view/edit/delete), nhật ký hoạt động.
 |--------|------|----------|
 | 1 | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) | Bảng, view, RLS, trigger, activity_log |
 | 2 | [`supabase/migrations/0002_import_fields.sql`](supabase/migrations/0002_import_fields.sql) | Cột phục vụ import + sheet nhập |
-| 3 | [`supabase/seed_templates.sql`](supabase/seed_templates.sql) | 85 Template + 12 xưởng (để auto-fill) |
-| 4 *(tuỳ chọn)* | `supabase/seed_data.sql` | **Nạp sẵn ~1500 đơn thật** + topup (xem mục C) |
+| 3 | [`supabase/migrations/0003_fix_rls_recursion.sql`](supabase/migrations/0003_fix_rls_recursion.sql) | **Bắt buộc** — sửa RLS đệ quy (không có bước này user đăng nhập mất quyền + không đọc được đơn) |
+| 4 | [`supabase/seed_templates.sql`](supabase/seed_templates.sql) | 85 Template + 12 xưởng (để auto-fill) |
+| 5 *(tuỳ chọn)* | `supabase/seed_data.sql` | (nâng cao) nạp qua `psql`; thường **nạp đơn bằng nút Import trên web** cho nhẹ |
 
 ### 3. Biến môi trường
 ```bash
