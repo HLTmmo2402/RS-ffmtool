@@ -20,7 +20,9 @@ function findHeaderRow(aoa: unknown[][]): number {
 
 type ColMap = Record<string, number>;
 function buildCols(header: unknown[]): ColMap {
-  const H = header.map(norm);
+  // Array.from (không phải .map) để mảng "đặc" — tránh lỗ (sparse) từ ô header trống/merge
+  // gây "Cannot read properties of undefined (reading 'includes')".
+  const H: string[] = Array.from({ length: header.length }, (_, i) => norm(header[i]));
   const find = (pred: (h: string) => boolean) => H.findIndex(pred);
   return {
     orderDate: find((h) => h.startsWith("ngàyorder") || h.startsWith("ngayorder")),
@@ -88,8 +90,9 @@ export function parseRsaSheet(aoa: unknown[][], sheetName = ""): ParseResult {
     return { orders: [], warnings: [{ row: sheetName || "?", message: "Không tìm thấy dòng header (cột Order ID)." }],
       stats: { totalRows: 0, orders: 0, items: 0, multiItemOrders: 0 } };
   }
-  const C = buildCols(aoa[hr]);
-  const header = aoa[hr].map((h) => cellStr(h) || "");
+  const headerRow = aoa[hr] || [];
+  const C = buildCols(headerRow);
+  const header = Array.from({ length: headerRow.length }, (_, i) => cellStr(headerRow[i]) || "");
   const map = new Map<string, ParsedOrder>();
   let dataRows = 0;
 
