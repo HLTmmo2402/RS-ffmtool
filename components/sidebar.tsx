@@ -3,30 +3,33 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { MODULES } from "@/lib/modules";
 
-type Item = { href: string; label: string; icon: string };
+type Item = { key: string; href: string; label: string; icon: string };
 
-const BASE: Item[] = [
-  { href: "/dashboard", label: "Tổng quan", icon: "📊" },
-  { href: "/today", label: "Việc hôm nay", icon: "🔔" },
-  { href: "/orders/new", label: "Nhập đơn", icon: "📝" },
-  { href: "/orders", label: "Đơn hàng", icon: "📦" },
-  { href: "/by-seller", label: "Theo seller", icon: "📈" },
-  { href: "/orders/import", label: "Import", icon: "⬆️" },
-  { href: "/templates", label: "Template", icon: "🎨" },
-  { href: "/factories", label: "Xưởng", icon: "🏭" },
-  { href: "/selling-accounts", label: "TK bán", icon: "🏷️" },
-];
-
-export function Sidebar({ role, userName, userRole, todayCount = 0 }: { role?: string; userName: string; userRole: string; todayCount?: number }) {
+export function Sidebar({
+  role, userName, userRole, todayCount = 0, allowedModules = null,
+}: {
+  role?: string; userName: string; userRole: string; todayCount?: number; allowedModules?: string[] | null;
+}) {
   const p = usePathname();
   const [open, setOpen] = useState(false);
+  const isAdmin = role === "admin";
+  const isFFM = role === "ffm" || role === "admin";
 
-  const links = [...BASE];
-  if (role === "ffm" || role === "admin") links.push({ href: "/finance", label: "Tài chính", icon: "💰" });
-  if (role === "admin") links.push(
-    { href: "/activity", label: "Nhật ký", icon: "📜" },
-    { href: "/admin/users", label: "Người dùng", icon: "👥" },
+  let links: Item[] = [{ key: "dashboard", href: "/dashboard", label: "Tổng quan", icon: "📊" }];
+  for (const m of MODULES) {
+    if (m.ffmOnly && !isFFM) continue;
+    links.push({ key: m.key, href: m.href, label: m.label, icon: m.icon });
+  }
+  // Phân quyền theo mục (chỉ áp cho non-admin khi đã cấu hình allowed_modules)
+  if (!isAdmin && allowedModules) {
+    links = links.filter((l) => l.key === "dashboard" || allowedModules.includes(l.key));
+  }
+  if (isAdmin) links.push(
+    { key: "activity", href: "/activity", label: "Nhật ký", icon: "📜" },
+    { key: "permissions", href: "/admin/permissions", label: "Phân quyền", icon: "🔑" },
+    { key: "admin_users", href: "/admin/users", label: "Người dùng", icon: "👥" },
   );
 
   const initials = (userName || "?").trim().split(/\s+/).slice(-1)[0].slice(0, 2).toUpperCase();
@@ -41,7 +44,7 @@ export function Sidebar({ role, userName, userRole, todayCount = 0 }: { role?: s
               (active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100")}>
             <span className="w-5 text-center text-base leading-none">{l.icon}</span>
             <span className="font-medium">{l.label}</span>
-            {l.href === "/today" && todayCount > 0 && (
+            {l.key === "today" && todayCount > 0 && (
               <span className={"ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold " +
                 (active ? "bg-white/20 text-white" : "bg-red-100 text-red-700")}>
                 {todayCount}
@@ -85,7 +88,6 @@ export function Sidebar({ role, userName, userRole, todayCount = 0 }: { role?: s
 
   return (
     <>
-      {/* Thanh trên cùng (mobile) */}
       <div className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
         <div className="flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-md bg-slate-900 text-xs font-bold text-white">FF</span>
@@ -94,10 +96,8 @@ export function Sidebar({ role, userName, userRole, todayCount = 0 }: { role?: s
         <button onClick={() => setOpen(true)} className="rounded-md border border-slate-300 px-3 py-1 text-lg leading-none">☰</button>
       </div>
 
-      {/* Overlay mobile */}
       {open && <div className="fixed inset-0 z-30 bg-black/30 md:hidden" onClick={() => setOpen(false)} />}
 
-      {/* Sidebar */}
       <aside className={"fixed top-0 z-40 h-screen w-60 shrink-0 border-r border-slate-200 bg-white transition-transform md:sticky md:z-0 md:translate-x-0 " +
         (open ? "translate-x-0" : "-translate-x-full")}>
         {inner}

@@ -6,6 +6,7 @@
 <title>RSA FFM — Quản lý đơn & Fulfillment</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#f4f6fa; --panel:#ffffff; --panel2:#f8fafc; --border:#e2e8f0;
@@ -376,7 +377,7 @@ const MENU = [
   { id:"todo",     icon:"✅", label:"Việc hôm nay" },
   { id:"orders",   icon:"📦", label:"Đơn hàng" },
   { id:"new",      icon:"➕", label:"Nhập đơn" },
-  { id:"import",   icon:"⬆️", label:"Import Cotik" },
+  { id:"import",   icon:"⬆️", label:"Import dữ liệu" },
   { id:"push",     icon:"🏭", label:"Đẩy xưởng", ffm:true },
   { id:"finance",  icon:"💰", label:"Tài chính", ffm:true },
   { id:"catalog",  icon:"📚", label:"Danh mục" },
@@ -891,29 +892,212 @@ async function saveNewRows(){
   toast(`Đã lưu ${nOrders} đơn mới, ${nItems} sản phẩm.`); go("orders");
 }
 
-/* ================= IMPORT COTIK CSV ================= */
-let IMP = null;
+/* ================= IMPORT (Cotik .csv + RSA-FFM .xlsx) =================
+   KHÔNG cần sửa file gốc. Đơn đã có -> chỉ cập nhật cấp đơn, giữ nguyên
+   sản phẩm & dữ liệu FFM đã nhập. */
+let IMP = null, IMP_WB = null;
+
+/* ---- helpers parser dùng chung ---- */
+const _cellStr = v => v==null ? "" : (v instanceof Date ? v.toISOString() : String(v).trim());
+const _stripQ = v => { let s=_cellStr(v); if(s.startsWith("'")) s=s.slice(1).trim(); return s; };
+const _cleanZero = v => { const s=_stripQ(v); return s==="0" ? "" : s; };
+const _orN = s => s===""?null:s;
+const _num = v => { if(typeof v==="number") return isFinite(v)?v:null;
+  const t=_stripQ(v).replace(/[^0-9.\-]/g,""); if(t===""||t==="-"||t===".") return null;
+  const n=Number(t); return isNaN(n)?null:n; };
+const _pad2 = s => String(s).padStart(2,"0");
+function _pDate(v){
+  if(v==null || v==="") return null;
+  if(v instanceof Date && !isNaN(v.getTime())) return `${v.getUTCFullYear()}-${_pad2(v.getUTCMonth()+1)}-${_pad2(v.getUTCDate())}`;
+  if(typeof v==="number" && v>30000 && v<80000){ const d=new Date(Math.round((v-25569)*86400*1000));
+    return isNaN(d.getTime())?null:`${d.getUTCFullYear()}-${_pad2(d.getUTCMonth()+1)}-${_pad2(d.getUTCDate())}`; }
+  const t=_stripQ(v); if(!t||t==="0") return null;
+  let m=t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if(m) return `${m[1]}-${_pad2(m[2])}-${_pad2(m[3])}`;
+  m=t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/); if(m) return `${m[3]}-${_pad2(m[2])}-${_pad2(m[1])}`;
+  return null;
+}
+const _cleanSize = v => { const s=_cleanZero(v).replace(/\s+/g," ").trim(); return s||null; };
+function _compactRaw(row){ const out={}; for(const k of Object.keys(row)){ const v=_cellStr(row[k]); if(v&&k) out[k]=v.length>500?v.slice(0,500):v; } return out; }
+function _existing(orders){
+  const set = new Set(S.orders.map(x=>x.platform+"|"+x.platform_order_id));
+  return orders.filter(o=>set.has(o.platform+"|"+o.platform_order_id)).length;
+}
+
 function renderImport(){
   $("#view").innerHTML = `
-  <h1>Import Cotik</h1><p class="sub">Nạp file export .csv của Cotik — <b>không cần sửa file</b>. Đơn đã có → chỉ cập nhật cấp đơn (label / tracking / trạng thái sàn), giữ nguyên sản phẩm & dữ liệu FFM.</p>
-  <div class="card mb"><input type="file" id="impFile" accept=".csv">
-  <div id="impPreview" class="mt"></div></div>`;
+  <h1>Import dữ liệu</h1>
+  <p class="sub">Nạp <b>Cotik export (.csv)</b> hoặc <b>sheet RSA-FFM (.xlsx)</b> — không cần sửa file.
+  Tự gộp đơn nhiều sản phẩm theo Order ID, tách TK bán / seller / xưởng, bóc size, suy trạng thái.
+  Đơn đã có → chỉ cập nhật cấp đơn (label / tracking / khách còn trống), <b>giữ nguyên</b> sản phẩm & dữ liệu FFM.</p>
+  <div class="card mb"><input type="file" id="impFile" accept=".csv,.xlsx,.xls">
+  <div id="impSheets" class="mt"></div><div id="impPreview" class="mt"></div></div>`;
   $("#impFile").onchange = e=>{
     const f = e.target.files[0]; if(!f) return;
-    Papa.parse(f, { header:true, skipEmptyLines:true, complete: res=>{
-      IMP = parseCotikJS(res.data);
-      const st = IMP.stats;
-      $("#impPreview").innerHTML = `
-      <div class="flex mb">
-        <span class="badge b-blue">${st.totalRows} dòng</span><span class="badge b-green">${st.orders} đơn</span>
-        <span class="badge b-purple">${st.items} sản phẩm</span><span class="badge b-yellow">${st.multiItemOrders} đơn nhiều SP</span>
-        <span class="badge b-gray">${IMP.existing} đơn đã có (chỉ cập nhật)</span>
-      </div>
-      ${IMP.warnings.length?`<details class="mb"><summary class="muted small">${IMP.warnings.length} cảnh báo</summary>
-        <div class="small muted">${IMP.warnings.slice(0,30).map(w=>`Dòng ${w.row}: ${esc(w.message)}`).join("<br>")}</div></details>`:""}
-      <button class="btn btn-p" onclick="runImport()">⬆ Nạp vào hệ thống</button>`;
-    }});
+    IMP=null; IMP_WB=null; $("#impPreview").innerHTML=""; $("#impSheets").innerHTML="";
+    if(/\.csv$/i.test(f.name)){
+      Papa.parse(f, { header:true, skipEmptyLines:true, complete: res=>{
+        IMP = parseCotikJS(res.data); IMP.source="cotik"; showImpPreview();
+      }});
+    } else {
+      const rd = new FileReader();
+      rd.onload = ev=>{
+        try{ IMP_WB = XLSX.read(ev.target.result, { type:"array", cellDates:true }); }
+        catch(err){ return fail(err); }
+        $("#impSheets").innerHTML = `<p class="small"><b>Chọn sheet cần nạp</b> (sheet "Đơn đang đi" của từng seller, hoặc "Tổng hợp đơn"):</p>
+        <div class="flex mb">${IMP_WB.SheetNames.map((sn,i)=>`<label class="flex" style="margin:0;border:1px solid var(--border);border-radius:8px;padding:4px 8px">
+          <input type="checkbox" class="impSh" value="${esc(sn)}" style="width:auto"> ${esc(sn)}</label>`).join("")}</div>
+        <div class="flex"><button class="btn btn-sm" onclick="$$('.impSh').forEach(c=>c.checked=true)">Chọn tất cả</button>
+        <button class="btn btn-p btn-sm" onclick="parseRsaSelected()">Đọc các sheet đã chọn</button></div>`;
+      };
+      rd.readAsArrayBuffer(f);
+    }
   };
+}
+function showImpPreview(){
+  const st = IMP.stats;
+  $("#impPreview").innerHTML = `
+  <div class="flex mb">
+    <span class="badge b-gray">${IMP.source==="cotik"?"Nguồn: Cotik":"Nguồn: RSA-FFM"}</span>
+    <span class="badge b-blue">${st.totalRows} dòng</span><span class="badge b-green">${st.orders} đơn</span>
+    <span class="badge b-purple">${st.items} sản phẩm</span><span class="badge b-yellow">${st.multiItemOrders} đơn nhiều SP</span>
+    <span class="badge b-gray">${IMP.existing} đơn đã có (chỉ cập nhật)</span>
+  </div>
+  ${IMP.warnings.length?`<details class="mb"><summary class="muted small">${IMP.warnings.length} cảnh báo</summary>
+    <div class="small muted">${IMP.warnings.slice(0,30).map(w=>`Dòng ${esc(String(w.row))}: ${esc(w.message)}`).join("<br>")}</div></details>`:""}
+  <button class="btn btn-p" onclick="runImport()">⬆ Nạp vào hệ thống</button>`;
+}
+function parseRsaSelected(){
+  const names = $$(".impSh").filter(c=>c.checked).map(c=>c.value);
+  if(!names.length) return toast("Chọn ít nhất 1 sheet.", true);
+  const map=new Map(); const warnings=[]; let totalRows=0;
+  for(const sn of names){
+    const aoa = XLSX.utils.sheet_to_json(IMP_WB.Sheets[sn], { header:1, raw:true, defval:null });
+    const res = parseRsaSheetJS(aoa, sn);
+    warnings.push(...res.warnings); totalRows += res.stats.totalRows;
+    for(const o of res.orders){ const k=o.platform+"|"+o.platform_order_id; if(!map.has(k)) map.set(k,o); }
+  }
+  const orders=[...map.values()];
+  IMP = { source:"rsa_ffm", orders, warnings, existing:_existing(orders),
+    stats:{ totalRows, orders:orders.length, items:orders.reduce((n,o)=>n+o.items.length,0),
+      multiItemOrders:orders.filter(o=>o.items.length>1).length } };
+  showImpPreview();
+}
+
+/* ---- parser RSA-FFM: dò header + map cột theo TÊN (chịu được sheet lệch cột) ---- */
+function parseRsaSheetJS(aoa, sheetName){
+  const norm = s => _cellStr(s).toLowerCase().replace(/[()]/g,"").replace(/[\s\n\r]/g,"");
+  let hr = -1;
+  for(let r=0; r<Math.min(10,aoa.length); r++){
+    if((aoa[r]||[]).some(c=>norm(c).includes("orderid"))){ hr=r; break; }
+  }
+  if(hr<0) return { orders:[], warnings:[{row:sheetName||"?", message:"Không tìm thấy dòng header (cột Order ID)."}],
+    stats:{ totalRows:0, orders:0, items:0, multiItemOrders:0 } };
+  const headerRow = aoa[hr]||[];
+  const H = Array.from({length:headerRow.length},(_,i)=>norm(headerRow[i]));
+  const fi = p => H.findIndex(p);
+  const C = {
+    orderDate: fi(h=>h.startsWith("ngàyorder")||h.startsWith("ngayorder")),
+    orderId: fi(h=>h.includes("orderid")), platform: fi(h=>h==="platform"),
+    account: fi(h=>h.includes("tàikhoảnbán")||h.includes("taikhoanban")),
+    shippedBy: fi(h=>h.includes("shippedby")), label: fi(h=>h.includes("linklabel")),
+    labelFee: fi(h=>h.includes("labelfee")), sellerName: fi(h=>h.includes("sellername")),
+    sellerNote: fi(h=>h.includes("sellernote")), customer: fi(h=>h.includes("customerinfo")),
+    template: fi(h=>h==="template"), productType: fi(h=>h.includes("producttype")),
+    factoryAuto: fi(h=>h.includes("nhàin")||h.includes("nhain")), dimension: fi(h=>h.includes("dimension")),
+    phoi: fi(h=>h.startsWith("phôi")||h.startsWith("phoi")), size: fi(h=>h==="size"),
+    color: fi(h=>h==="color"), quantity: fi(h=>h.includes("quantity")),
+    linkSP: fi(h=>h.includes("linksảnphẩm")||h.includes("linksanpham")),
+    listing: fi(h=>h.includes("listingmockup")||h.includes("listingdesign")),
+    orderDesign: fi(h=>h.includes("orderdesign")), fileDesign: fi(h=>h.includes("filedesign")),
+    confirmDesign: fi(h=>h.includes("confirmdesign")), xuong: fi(h=>h==="xưởng"||h==="xuong"),
+    carrier: fi(h=>h.includes("carrier")), pushedAt: fi(h=>h.includes("ngàyđẩy")||h.includes("ngayday")),
+    orderFFM: fi(h=>h.includes("orderffm")), tracking: fi(h=>h.includes("trackingnumber")),
+    deadline: fi(h=>h.includes("deadline")), trackingStatus: fi(h=>h.includes("trackingstatus")),
+    shippingCost: fi(h=>h.includes("shippingcost")), itemsCost: fi(h=>h.includes("itemscost")),
+    note: fi(h=>h==="note"),
+  };
+  const header = Array.from({length:headerRow.length},(_,i)=>_cellStr(headerRow[i])||"");
+  const get = (row,idx)=> idx>=0 ? row[idx] : undefined;
+  const rsaStatus = f=>{
+    const ts = f.trackingStatusText.toLowerCase();
+    let track="none";
+    if(/return|hoàn|hoan/.test(ts)) track="returned";
+    else if(/deliver|đã giao|da giao/.test(ts)) track="delivered";
+    else if(/transit|đang giao|dang giao|shipped/.test(ts)) track="in_transit";
+    if(/cancel|hủy|huy|refund/.test((f.note+" "+ts).toLowerCase())) return {item:"cancelled",track};
+    if(track==="delivered") return {item:"delivered",track};
+    if(f.tracking) return {item:"has_tracking",track:track==="none"?"in_transit":track};
+    if(f.pushedAt && f.carrier) return {item:"in_production",track};
+    if(f.orderFFM) return {item:"ordered",track};
+    if(f.confirm && f.label) return {item:"design_ok",track};
+    if(f.design || f.confirm) return {item:"waiting_design",track};
+    return {item:"new",track};
+  };
+  const map=new Map(); let dataRows=0; const warnings=[];
+  for(let r=hr+1; r<aoa.length; r++){
+    const row = aoa[r]||[];
+    const id = _cleanZero(get(row,C.orderId)).replace(/\s+$/,"").trim();
+    if(!id) continue;
+    if(/grand\s*total|tổng/i.test(id)) continue;
+    dataRows++;
+    let plat = _cleanZero(get(row,C.platform)).toUpperCase();
+    if(plat!=="TTS" && plat!=="AMZ") plat = /^\d{3}-\d{7}-\d{7}$/.test(id) ? "AMZ" : "TTS";
+    const sbRaw = _cleanZero(get(row,C.shippedBy)).toLowerCase();
+    let shipped = null;
+    if(sbRaw.includes("tiktok")) shipped="tiktok_shipping";
+    else if(sbRaw.includes("seller")) shipped="seller_shipping";
+    else if(plat==="TTS") shipped="tiktok_shipping";
+    const rawObj={}; header.forEach((h,i)=>{ if(h) rawObj[h]=row[i]; });
+    let order = map.get(id);
+    if(!order){
+      const cust = splitCustomer(_cleanZero(get(row,C.customer)));
+      order = { platform:plat, platform_order_id:id,
+        selling_account_name:_orN(_cleanZero(get(row,C.account))),
+        seller_name:_orN(_cleanZero(get(row,C.sellerName))) || _orN((sheetName||"").trim()),
+        order_date:_pDate(get(row,C.orderDate)), shipped_by:shipped,
+        label_link:_orN(_cleanZero(get(row,C.label))), label_fee:_num(get(row,C.labelFee)),
+        tracking_number:_orN(_cleanZero(get(row,C.tracking))), platform_status:null, order_value:null,
+        customer_name:cust.name, customer_contact:cust.phone, customer_address:cust.address,
+        buyer_note:null, seller_note:_orN(_cleanZero(get(row,C.sellerNote))),
+        source_raw:_compactRaw(rawObj), items:[] };
+      map.set(id, order);
+    } else {
+      if(!order.customer_name){
+        const cust = splitCustomer(_cleanZero(get(row,C.customer)));
+        order.customer_name ??= cust.name; order.customer_contact ??= cust.phone; order.customer_address ??= cust.address;
+      }
+      order.label_link ??= _orN(_cleanZero(get(row,C.label)));
+      order.tracking_number ??= _orN(_cleanZero(get(row,C.tracking)));
+      order.order_date ??= _pDate(get(row,C.orderDate));
+    }
+    const confirm = _cleanZero(get(row,C.confirmDesign)) !== "";
+    const tracking = _orN(_cleanZero(get(row,C.tracking)));
+    const orderFFM = _orN(_cleanZero(get(row,C.orderFFM)));
+    const pushedAt = _pDate(get(row,C.pushedAt));
+    const carrier = _orN(_cleanZero(get(row,C.carrier)));
+    const design = _orN(_cleanZero(get(row,C.fileDesign)));
+    const noteText = _cleanZero(get(row,C.note));
+    const st = rsaStatus({ trackingStatusText:_cleanZero(get(row,C.trackingStatus)),
+      tracking, orderFFM, pushedAt, carrier, confirm, label:order.label_link, design, note:noteText });
+    const factory = _orN(_cleanZero(get(row,C.xuong))) || _orN(_cleanZero(get(row,C.factoryAuto)));
+    order.items.push({ source_line:order.items.length+1,
+      product_title:_orN(_cleanZero(get(row,C.listing))) || _orN(_cleanZero(get(row,C.template))),
+      template_code:_orN(_cleanZero(get(row,C.template))),
+      product_type:_orN(_cleanZero(get(row,C.productType))),
+      factory_name:factory, dimension:_orN(_cleanZero(get(row,C.dimension))),
+      sku_phoi:_orN(_cleanZero(get(row,C.phoi))), skus_raw:_orN(_cleanZero(get(row,C.phoi))),
+      size:_cleanSize(get(row,C.size)), color:_orN(_cleanZero(get(row,C.color))),
+      quantity:_num(get(row,C.quantity))??1, design_link:design, confirm_design:confirm,
+      listing_link:_orN(_cleanZero(get(row,C.linkSP))) || _orN(_cleanZero(get(row,C.listing))),
+      order_design_code:_orN(_cleanZero(get(row,C.orderDesign))),
+      factory_order_id:orderFFM, tracking_number:tracking, tracking_status:st.track, item_status:st.item,
+      carrier, pushed_at:pushedAt, deadline_ship:_pDate(get(row,C.deadline)),
+      fulfillment_cost:_num(get(row,C.itemsCost)), shipping_cost:_num(get(row,C.shippingCost)),
+      note:_orN(noteText), source_raw:_compactRaw(rawObj) });
+  }
+  const orders=[...map.values()];
+  return { orders, warnings, stats:{ totalRows:dataRows, orders:orders.length,
+    items:orders.reduce((n,o)=>n+o.items.length,0), multiItemOrders:orders.filter(o=>o.items.length>1).length } };
 }
 function parseCotikJS(rowsRaw){
   const stripQ = v=>{ let s = v==null?"":String(v).trim(); if(s.startsWith("'")) s=s.slice(1).trim(); return s; };
@@ -981,16 +1165,30 @@ async function runImport(){
   if(!IMP) return;
   const btnHtml = $("#impPreview").innerHTML;
   $("#impPreview").innerHTML += `<p class="muted">Đang nạp, vui lòng đợi…</p>`;
+  const src = IMP.source || "cotik";
   try{
-    /* map TK bán: tạo thiếu */
+    /* map TK bán: tạo thiếu (seller thường không có quyền -> bỏ qua, đơn vẫn nạp được) */
     const accByName = {}; S.sellAccs.forEach(a=>accByName[a.name]=a);
     const needAcc = [...new Set(IMP.orders.map(o=>o.selling_account_name).filter(n=>n && !accByName[n]))];
     if(needAcc.length){
-      /* seller thường không có quyền tạo TK bán (RLS) -> bỏ qua, đơn vẫn nạp được */
-      const { data, error } = await db.from("selling_accounts").insert(needAcc.map(n=>({platform:"TTS",name:n}))).select();
+      const byPlat = {};
+      IMP.orders.forEach(o=>{ if(o.selling_account_name) byPlat[o.selling_account_name] ??= o.platform||"TTS"; });
+      const { data, error } = await db.from("selling_accounts").insert(needAcc.map(n=>({platform:byPlat[n]||"TTS",name:n}))).select();
       if(!error && data) data.forEach(a=>{accByName[a.name]=a; S.sellAccs.push(a); maps.sellAcc[a.id]=a;});
-      else if(error) toast(`Bỏ qua tạo ${needAcc.length} TK bán mới (cần quyền FFM/Admin): ${needAcc.join(", ").slice(0,80)}`, true);
+      else if(error) toast(`Bỏ qua tạo ${needAcc.length} TK bán mới (cần quyền FFM/Admin)`, true);
     }
+    /* map XƯỞNG theo tên (RSA): tạo thiếu nếu có quyền */
+    const factByName = {}; S.factories.forEach(f=>factByName[f.name.toLowerCase()]=f);
+    const needF = [...new Set(IMP.orders.flatMap(o=>o.items.map(i=>i.factory_name))
+      .filter(n=>n && !factByName[n.toLowerCase()]))];
+    if(needF.length){
+      const { data, error } = await db.from("factories").insert(needF.map(n=>({name:n}))).select();
+      if(!error && data) data.forEach(f=>{factByName[f.name.toLowerCase()]=f; S.factories.push(f); maps.factory[f.id]=f;});
+      else if(error) toast(`Bỏ qua tạo ${needF.length} xưởng mới (cần quyền FFM/Admin): ${needF.join(", ").slice(0,60)}`, true);
+    }
+    /* map TEMPLATE theo code ('024_Onos_...' -> code '024') hoặc theo tên */
+    const tmplByKey = {};
+    S.templates.forEach(t=>{ if(t.code) tmplByKey[t.code]=t; tmplByKey[t.name.toLowerCase()] ??= t; });
     /* map seller theo seller_label / full_name */
     const profByLabel = {};
     S.profiles.forEach(p=>{ if(p.seller_label) profByLabel[p.seller_label.toLowerCase()]=p; profByLabel[p.full_name.toLowerCase()] ??= p; });
@@ -999,7 +1197,8 @@ async function runImport(){
     let created=0, updated=0, itemsAdded=0, skipped=0;
     const newOrders = [], newOrdersSrc = [];
     for(const po of IMP.orders){
-      const ex = existByKey["TTS|"+po.platform_order_id];
+      const plat = po.platform || "TTS";
+      const ex = existByKey[plat+"|"+po.platform_order_id];
       if(ex){
         const patch = {};
         if(po.label_link && !ex.label_link) patch.label_link = po.label_link;
@@ -1007,6 +1206,8 @@ async function runImport(){
         if(po.platform_status && ex.platform_status!==po.platform_status) patch.platform_status = po.platform_status;
         if(po.customer_name && !ex.customer_name){ patch.customer_name=po.customer_name; patch.customer_contact=po.customer_contact; patch.customer_address=po.customer_address; }
         if(po.order_value!=null && ex.order_value==null) patch.order_value = po.order_value;
+        if(po.label_fee!=null && ex.label_fee==null) patch.label_fee = po.label_fee;
+        if(po.seller_note && !ex.seller_note) patch.seller_note = po.seller_note;
         if(Object.keys(patch).length){
           /* đơn của seller khác -> RLS chặn UPDATE: bỏ qua, không vỡ cả lần import */
           const { error } = await db.from("orders").update(patch).eq("id", ex.id);
@@ -1014,13 +1215,15 @@ async function runImport(){
         }
       } else {
         const prof = po.seller_name ? profByLabel[po.seller_name.toLowerCase()] : null;
-        newOrders.push({ platform:"TTS", platform_order_id:po.platform_order_id,
-          selling_account_id: po.selling_account_name ? accByName[po.selling_account_name]?.id : null,
+        newOrders.push({ platform:plat, platform_order_id:po.platform_order_id,
+          selling_account_id: po.selling_account_name ? (accByName[po.selling_account_name]?.id||null) : null,
           seller_id: prof?prof.id:null, seller_name_import: prof?null:po.seller_name,
-          order_date:po.order_date, shipped_by:"tiktok_shipping", label_link:po.label_link,
-          tracking_number:po.tracking_number, platform_status:po.platform_status, order_value:po.order_value,
+          order_date:po.order_date, shipped_by:po.shipped_by||"tiktok_shipping", label_link:po.label_link,
+          label_fee:po.label_fee??null, tracking_number:po.tracking_number,
+          platform_status:po.platform_status, order_value:po.order_value,
           customer_name:po.customer_name, customer_contact:po.customer_contact, customer_address:po.customer_address,
-          buyer_note:po.buyer_note, import_source:"cotik", created_by:S.me.id });
+          buyer_note:po.buyer_note, seller_note:po.seller_note||null,
+          source_raw:po.source_raw||null, import_source:src, created_by:S.me.id });
         newOrdersSrc.push(po);
       }
     }
@@ -1033,7 +1236,17 @@ async function runImport(){
       const itemRows = [];
       for(const po of newOrdersSrc.slice(i,i+200)){
         const o = byPid[po.platform_order_id]; if(!o) continue;
-        for(const it of po.items) itemRows.push({ order_id:o.id, ...it, import_source:"cotik" });
+        for(const it of po.items){
+          const { factory_name, ...rest } = it;
+          let factory_id = null, template_id = null;
+          if(factory_name){ const f = factByName[factory_name.toLowerCase()]; factory_id = f?f.id:null; }
+          if(rest.template_code){
+            const code = rest.template_code.split("_")[0].trim();
+            const t = tmplByKey[code] || tmplByKey[rest.template_code.toLowerCase()];
+            if(t){ template_id = t.id; factory_id ??= t.factory_id; rest.product_type ??= t.product_type; rest.dimension ??= t.dimension; }
+          }
+          itemRows.push({ order_id:o.id, ...rest, factory_id, template_id, import_source:src });
+        }
       }
       for(let j=0; j<itemRows.length; j+=500){
         const { data:its, error:e2 } = await db.from("order_items").insert(itemRows.slice(j,j+500)).select();
@@ -1042,7 +1255,7 @@ async function runImport(){
     }
     buildRows(); buildNav();
     toast(`Import xong: ${created} đơn mới (${itemsAdded} SP), ${updated} đơn cập nhật${skipped?`, ${skipped} đơn bỏ qua (ngoài quyền)`:""}.`);
-    IMP=null; go("orders");
+    IMP=null; IMP_WB=null; go("orders");
   }catch(e){ $("#impPreview").innerHTML = btnHtml; fail(e); }
 }
 
@@ -1193,7 +1406,8 @@ async function finDel(table, id){
 /* ================= DANH MỤC ================= */
 let catTab = "factories";
 function renderCatalog(){
-  const tabs = [["factories","🏭 Xưởng"],["templates","🎨 Template"],["selling_accounts","🛒 TK bán hàng"]];
+  let tabs = [["factories","🏭 Xưởng"],["templates","🎨 Template"],["selling_accounts","🛒 TK bán hàng"]];
+  if(isFFM()) tabs.push(["factory_accounts","🔑 TK xưởng"]);
   $("#view").innerHTML = `
   <div class="spread mb"><div><h1>Danh mục</h1><p class="sub">Nguồn auto-fill & dropdown — sửa 1 chỗ, cả hệ thống dùng chung</p></div>
   ${isFFM()?`<button class="btn btn-p" onclick="catForm()">＋ Thêm</button>`:""}</div>
@@ -1229,10 +1443,32 @@ function renderCatalog(){
     <td class="center">${a.active!==false?"✓":"—"}</td><td>${esc(a.note||"")}</td>
     ${cf?`<td><button class="btn btn-sm" onclick="catForm('${a.id}')">✎</button></td>`:""}</tr>`).join("")}</table></div></div>`;
   }
+  if(catTab==="factory_accounts"){
+    const byFact = [...S.factAccs].sort((a,b)=>(maps.factory[a.factory_id]?.name||"").localeCompare(maps.factory[b.factory_id]?.name||""));
+    B.innerHTML = `<div class="card">
+    <p class="small muted mb">Mật khẩu lưu ở bảng riêng <code>factory_secrets</code> — RLS chỉ FFM/Admin đọc được, không ghi vào nhật ký. Bấm 👁 để xem.</p>
+    <div class="tw" style="max-height:65vh"><table>
+    <tr><th>Xưởng</th><th>Email đăng nhập</th><th>Note</th><th>Active</th><th>Mật khẩu</th><th></th></tr>
+    ${byFact.map(a=>`<tr><td><b>${esc(maps.factory[a.factory_id]?.name||"?")}</b></td><td>${esc(a.email)}</td>
+    <td class="small">${esc(a.note||"")}</td><td class="center">${a.active!==false?"✓":"—"}</td>
+    <td><button class="btn btn-sm" id="pw_${a.id}" onclick="showSecret('${a.id}')">👁 Hiện</button></td>
+    <td><button class="btn btn-sm" onclick="catForm('${a.id}')">✎</button></td></tr>`).join("")
+    || `<tr><td colspan="6" class="muted">Chưa có tài khoản xưởng nào. Bấm "＋ Thêm".</td></tr>`}</table></div></div>`;
+  }
+}
+async function showSecret(accId){
+  const btn = document.getElementById("pw_"+accId);
+  const { data, error } = await db.from("factory_secrets").select("password_enc").eq("factory_account_id", accId).maybeSingle();
+  if(!btn) return;
+  if(error || !data || !data.password_enc){ btn.textContent = "(chưa lưu)"; return; }
+  let pw = data.password_enc;
+  if(pw.startsWith("b64:")){ try{ pw = decodeURIComponent(escape(atob(pw.slice(4)))); }catch(_){} }
+  btn.textContent = pw; btn.onclick = null;
 }
 function catForm(id){
   const t = catTab;
-  const cur = id ? (t==="factories"?S.factories:t==="templates"?S.templates:S.sellAccs).find(x=>x.id===id) : {};
+  const pool = t==="factories"?S.factories : t==="templates"?S.templates : t==="factory_accounts"?S.factAccs : S.sellAccs;
+  const cur = id ? (pool.find(x=>x.id===id)||{}) : {};
   let F = "";
   if(t==="factories") F = `<label>Tên *</label><input id="cf_name" value="${esc(cur.name||"")}">
     <label>Trạng thái</label><select id="cf_status">${["active","evaluating","rejected"].map(s=>`<option value="${s}" ${cur.status===s?"selected":""}>${s==="active"?"Đang dùng":s==="evaluating"?"Đang đánh giá":"Loại"}</option>`).join("")}</select>
@@ -1251,7 +1487,12 @@ function catForm(id){
     <label>Sàn</label><select id="cf_plat"><option ${cur.platform==="TTS"?"selected":""}>TTS</option><option ${cur.platform==="AMZ"?"selected":""}>AMZ</option></select>
     <label>Note</label><input id="cf_note" value="${esc(cur.note||"")}">
     <label>Active</label><select id="cf_act"><option value="1" ${cur.active!==false?"selected":""}>✓ Dùng</option><option value="0" ${cur.active===false?"selected":""}>Ẩn</option></select>`;
-  openModal(`<div class="spread mb"><h2>${id?"Sửa":"Thêm"} ${t==="factories"?"xưởng":t==="templates"?"template":"TK bán"}</h2>
+  if(t==="factory_accounts") F = `<label>Xưởng *</label><select id="cf_fact">${factOpts(cur.factory_id)}</select>
+    <label>Email đăng nhập *</label><input id="cf_email" value="${esc(cur.email||"")}">
+    <label>Note</label><input id="cf_note" value="${esc(cur.note||"")}">
+    <label>Active</label><select id="cf_act"><option value="1" ${cur.active!==false?"selected":""}>✓ Dùng</option><option value="0" ${cur.active===false?"selected":""}>Ẩn</option></select>
+    <label>Mật khẩu ${id?"(để trống = giữ nguyên)":""}</label><input id="cf_pw" type="text" autocomplete="off" placeholder="••••••">`;
+  openModal(`<div class="spread mb"><h2>${id?"Sửa":"Thêm"} ${t==="factories"?"xưởng":t==="templates"?"template":t==="factory_accounts"?"TK xưởng":"TK bán"}</h2>
   <button class="btn btn-sm" onclick="closeModal()">✕</button></div>${F}
   <div class="flex mt"><button class="btn btn-p" onclick="catSave('${id||""}')">Lưu</button>
   ${id?`<button class="btn btn-danger" onclick="catDel('${id}')">🗑 Xoá</button>`:""}
@@ -1268,15 +1509,30 @@ async function catSave(id){
     dimension:$("#cf_dim").value||null, template_link:$("#cf_link").value||null, active:$("#cf_act").value==="1" };
   if(t==="selling_accounts") row = { name:$("#cf_name").value.trim(), platform:$("#cf_plat").value,
     note:$("#cf_note").value||null, active:$("#cf_act").value==="1" };
-  if(!row.name) return toast("Nhập tên.", true);
-  const q = id ? db.from(t).update(row).eq("id",id) : db.from(t).insert(row);
-  const { error } = await q;
+  if(t==="factory_accounts"){
+    row = { factory_id:$("#cf_fact").value||null, email:$("#cf_email").value.trim(),
+      note:$("#cf_note").value||null, active:$("#cf_act").value==="1" };
+    if(!row.factory_id || !row.email) return toast("Chọn xưởng và nhập email.", true);
+  } else if(!row.name) return toast("Nhập tên.", true);
+  const q = id ? db.from(t).update(row).eq("id",id).select().single() : db.from(t).insert(row).select().single();
+  const { data:saved, error } = await q;
   if(error) return fail(error);
+  if(t==="factory_accounts"){
+    const pw = $("#cf_pw").value;
+    if(pw){
+      const enc = "b64:"+btoa(unescape(encodeURIComponent(pw)));
+      const { error:e2 } = await db.from("factory_secrets")
+        .upsert({ factory_account_id: saved.id, password_enc: enc });
+      if(e2) fail(e2);
+    }
+  }
   closeModal(); toast("Đã lưu.");
-  const fresh = await fetchAll(t, {order:"name", asc:true}).catch(()=>null);
+  const orderCol = t==="factory_accounts" ? "email" : "name";
+  const fresh = await fetchAll(t, {order:orderCol, asc:true}).catch(()=>null);
   if(fresh){ if(t==="factories"){S.factories=fresh; maps.factory=Object.fromEntries(fresh.map(f=>[f.id,f]));}
     if(t==="templates"){S.templates=fresh; maps.template=Object.fromEntries(fresh.map(f=>[f.id,f]));}
-    if(t==="selling_accounts"){S.sellAccs=fresh; maps.sellAcc=Object.fromEntries(fresh.map(f=>[f.id,f]));} }
+    if(t==="selling_accounts"){S.sellAccs=fresh; maps.sellAcc=Object.fromEntries(fresh.map(f=>[f.id,f]));}
+    if(t==="factory_accounts"){S.factAccs=fresh;} }
   renderCatalog();
 }
 async function catDel(id){
@@ -1287,6 +1543,7 @@ async function catDel(id){
   if(catTab==="factories") S.factories = S.factories.filter(x=>x.id!==id);
   if(catTab==="templates") S.templates = S.templates.filter(x=>x.id!==id);
   if(catTab==="selling_accounts") S.sellAccs = S.sellAccs.filter(x=>x.id!==id);
+  if(catTab==="factory_accounts") S.factAccs = S.factAccs.filter(x=>x.id!==id);
   renderCatalog();
 }
 
@@ -1336,7 +1593,7 @@ async function approveUser(id){
     if(e2) fail(e2); else claimed = data||0;
   }
   toast(`Đã duyệt.${claimed?` Gán ${claimed} đơn cũ của "${f.seller_label}".`:""}`);
-  await reloadData(); go("users");
+  await reloadData();
 }
 async function saveUser(id){
   const f = readUserForm(id);
@@ -1345,7 +1602,7 @@ async function saveUser(id){
   if(error) return fail(error);
   let claimed = 0;
   if(f.seller_label && f.seller_label!==p.seller_label){
-    const { data } = await db.rpc("claim_seller_orders", { p_user:id, p_label:f.seller_label }).catch(()=>({data:0}));
+    const { data } = await db.rpc("claim_seller_orders", { p_user:id, p_label:f.seller_label });
     claimed = data||0;
   }
   Object.assign(p, f);
@@ -1373,7 +1630,7 @@ async function loadLog(){
   const ent = $("#lgEntity") ? $("#lgEntity").value : "";
   if(ent) q = q.eq("entity", ent);
   const { data, error } = await q;
-  if(error) return $("#lgBody").innerHTML = `<p class="muted">Không đọc được nhật ký (cần quyền xem-toàn-bộ).</p>`;
+  if(error){ $("#lgBody").innerHTML = `<p class="muted">Không đọc được nhật ký (cần quyền xem-toàn-bộ).</p>`; return; }
   const AV = { INSERT:'<span class="badge b-green">Thêm</span>', UPDATE:'<span class="badge b-yellow">Sửa</span>', DELETE:'<span class="badge b-red">Xoá</span>' };
   $("#lgBody").innerHTML = `<div class="tw" style="max-height:65vh"><table>
   <tr><th>Thời gian</th><th>Người làm</th><th>Hành động</th><th>Bảng</th><th>Chi tiết</th></tr>
