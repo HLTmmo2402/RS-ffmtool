@@ -42,6 +42,7 @@ export default async function DashboardPage() {
   const supabase = createClient();
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const floor180 = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10); // loại deadline rác (1899…)
 
   const [ordRes, itRes, balRes] = await Promise.all([
     supabase.from("orders")
@@ -74,7 +75,7 @@ export default async function DashboardPage() {
     if (!OPEN.has(it.item_status)) continue;
     const fac = Array.isArray(it.factories) ? it.factories[0]?.name : it.factories?.name;
     byFactory[fac ?? "(chưa gán xưởng)"] = (byFactory[fac ?? "(chưa gán xưởng)"] ?? 0) + 1;
-    if (it.deadline_ship && it.deadline_ship < today) overdue++;
+    if (it.deadline_ship && it.deadline_ship < today && it.deadline_ship >= floor180) overdue++;
   }
   const queue = Object.entries(byFactory).sort((a, b) => b[1] - a[1]).slice(0, 10);
   const balances = ((balRes.data as { name: string; balance_usd: number }[] | null) ?? [])
@@ -161,7 +162,7 @@ export default async function DashboardPage() {
             {days.map((x) => (
               <div key={x.d} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${x.d}: ${x.n} đơn`}>
                 <span className="text-[10px] font-medium text-slate-500">{x.n || ""}</span>
-                <div className="w-full rounded-t bg-slate-800" style={{ height: `${(x.n / maxDay) * 100}%`, minHeight: x.n ? "2px" : "0" }} />
+                <div className="w-full rounded-t bg-blue-500" style={{ height: `${(x.n / maxDay) * 100}%`, minHeight: x.n ? "4px" : "0" }} />
                 <span className="text-[9px] text-slate-400">{x.d.slice(8)}</span>
               </div>
             ))}
