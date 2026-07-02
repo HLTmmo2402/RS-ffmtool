@@ -84,6 +84,19 @@ export default async function DashboardPage() {
   const weekCount = orders.filter((o) => o.order_date && o.order_date >= weekAgo).length;
   const recent = orders.slice(0, 8);
 
+  // Đơn theo ngày (14 ngày gần nhất)
+  const days: { d: string; n: number }[] = [];
+  for (let i = 13; i >= 0; i--) days.push({ d: new Date(Date.now() - i * 86400000).toISOString().slice(0, 10), n: 0 });
+  const dayIdx: Record<string, number> = {};
+  days.forEach((x, i) => (dayIdx[x.d] = i));
+  for (const o of orders) if (o.order_date && o.order_date in dayIdx) days[dayIdx[o.order_date]].n++;
+  const maxDay = Math.max(1, ...days.map((x) => x.n));
+
+  // Top seller
+  const bySeller: Record<string, number> = {};
+  for (const o of orders) { const s = o.seller_name_import ?? "(chưa gán)"; bySeller[s] = (bySeller[s] ?? 0) + 1; }
+  const topSeller = Object.entries(bySeller).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
   const cards = [
     { label: "Tổng đơn", value: orders.length, cls: "text-slate-900" },
     { label: "Đơn hôm nay", value: todayCount, cls: "text-slate-900" },
@@ -139,6 +152,40 @@ export default async function DashboardPage() {
           ))}
         </div>
       </section>
+
+      {/* Đơn theo ngày + Top seller */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Đơn theo ngày (14 ngày gần nhất)</h2>
+          <div className="flex h-32 items-end gap-1">
+            {days.map((x) => (
+              <div key={x.d} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${x.d}: ${x.n} đơn`}>
+                <span className="text-[10px] font-medium text-slate-500">{x.n || ""}</span>
+                <div className="w-full rounded-t bg-slate-800" style={{ height: `${(x.n / maxDay) * 100}%`, minHeight: x.n ? "2px" : "0" }} />
+                <span className="text-[9px] text-slate-400">{x.d.slice(8)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">Top seller</h2>
+            <Link href="/by-seller" className="text-xs text-blue-600 hover:underline">Chi tiết →</Link>
+          </div>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <table className="min-w-full text-sm"><tbody>
+              {topSeller.length === 0 ? (
+                <tr><td className="px-3 py-5 text-center text-slate-400">Chưa có.</td></tr>
+              ) : topSeller.map(([name, nn]) => (
+                <tr key={name} className="border-t border-slate-100 first:border-0">
+                  <td className="px-3 py-1.5">{name}</td>
+                  <td className="px-3 py-1.5 text-right font-medium">{nn}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+        </section>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Đơn gần đây */}

@@ -14,8 +14,9 @@ export default async function Page() {
       .eq("active", true)
       .order("code"),
     supabase.from("selling_accounts").select("id, name, platform").eq("active", true).order("name"),
-    supabase.from("profiles").select("full_name").eq("id", user?.id ?? "").maybeSingle(),
+    supabase.from("profiles").select("full_name, role").eq("id", user?.id ?? "").maybeSingle(),
   ]);
+  const isFFM = profRes.data?.role === "ffm" || profRes.data?.role === "admin";
 
   const templates: TemplateOpt[] = (tplRes.data ?? []).map((t) => {
     const fac = t.factories as unknown as { name: string } | { name: string }[] | null;
@@ -47,7 +48,7 @@ export default async function Page() {
               Chưa có Template nào — chạy <b>supabase/seed_templates.sql</b> để bật auto-fill (hoặc thêm ở mục Template).
             </div>
           )}
-          <OrderSheet templates={templates} accounts={accounts} sellerName={sellerName} />
+          <OrderSheet templates={templates} accounts={accounts} sellerName={sellerName} isFFM={isFFM} />
         </>
       )}
     </div>
