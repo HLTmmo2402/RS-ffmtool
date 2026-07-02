@@ -70,6 +70,16 @@ export default async function DashboardPage() {
     { label: "Sự cố", value: cnt(["issue"]), cls: "text-red-600" },
   ];
 
+  const dist = [
+    { k: "Chờ seller", n: cnt(["new", "waiting_design"]), c: "bg-orange-400" },
+    { k: "Chờ FFM", n: cnt(["design_ok", "ordered"]), c: "bg-amber-400" },
+    { k: "Đang SX/ship", n: cnt(["in_production", "has_tracking"]), c: "bg-blue-400" },
+    { k: "Đã giao", n: cnt(["delivered", "synced"]), c: "bg-emerald-400" },
+    { k: "Sự cố", n: cnt(["issue"]), c: "bg-red-400" },
+    { k: "Huỷ", n: cnt(["cancelled"]), c: "bg-slate-300" },
+  ];
+  const totalD = dist.reduce((s, d) => s + d.n, 0) || 1;
+
   return (
     <div className="space-y-6">
       <h1 className="text-lg font-semibold">Tổng quan</h1>

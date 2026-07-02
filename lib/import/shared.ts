@@ -131,13 +131,23 @@ export function parseDateFlexible(v: unknown): string | null {
   const t = stripQuote(v);
   if (!t || t === "0") return null;
 
-  let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); // yyyy-mm-dd
-  if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  let m = t.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); // yyyy-mm-dd (hoặc yyyy-dd-mm bị lệch)
+  if (m) return mkYmd(+m[1], +m[2], +m[3]);
 
-  m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/); // dd-mm-yyyy hoặc dd/mm/yyyy (Cotik)
-  if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+  m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/); // dd-mm-yyyy / dd/mm/yyyy (Cotik)
+  if (m) return mkYmd(+m[3], +m[2], +m[1]);
 
   return null;
+}
+
+/**
+ * Ghép y-m-d, tự sửa khi tháng/ngày lệch chỗ (vd '2026-31-05' = yyyy-dd-mm).
+ * Ngày KHÔNG hợp lệ -> null (bỏ ô ngày đó, KHÔNG làm hỏng cả lô import).
+ */
+function mkYmd(y: number, mo: number, da: number): string | null {
+  if (mo > 12 && da <= 12) { const tmp = mo; mo = da; da = tmp; } // tháng>12 => hoán đổi
+  if (!Number.isFinite(y) || mo < 1 || mo > 12 || da < 1 || da > 31 || y < 1900 || y > 2100) return null;
+  return `${y}-${pad(String(mo))}-${pad(String(da))}`;
 }
 
 function pad(s: string): string { return s.padStart(2, "0"); }

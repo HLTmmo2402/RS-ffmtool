@@ -34,6 +34,26 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
     if (error) alert("Lưu thất bại: " + error.message);
   }
 
+  function exportCSV() {
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const head = ["Ngày", "Order ID", "Sàn", "TK bán", "Seller", "Khách", "SĐT", "Tiến độ", "TT sàn", "Tracking", "Giá trị (USD)", "Ghi chú", "Sản phẩm"];
+    const body = rows.map((o) => [
+      o.order_date ?? "", o.platform_order_id, o.platform, o.selling_account_name ?? "",
+      o.seller_name ?? "", o.customer_name ?? "", o.customer_contact ?? "",
+      stage(o.items).label, o.platform_status ?? "", o.tracking_number ?? "",
+      o.order_value ?? "", o.seller_note ?? "",
+      o.items.map((i) => `${i.product_title ?? ""}${i.size ? " (" + i.size + ")" : ""}`).join(" | "),
+    ].map(esc).join(","));
+    const csv = "﻿" + [head.map(esc).join(","), ...body].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "don-hang.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return data;
@@ -55,7 +75,11 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
         <input value={q} onChange={(e) => setQ(e.target.value)}
           placeholder="Tìm: Order ID, khách, seller note, color, tracking…"
           className="w-full max-w-md rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
-        <span className="text-sm text-slate-400">{rows.length}/{data.length} đơn</span>
+        <span className="whitespace-nowrap text-sm text-slate-400">{rows.length}/{data.length} đơn</span>
+        <button onClick={exportCSV} disabled={rows.length === 0}
+          className="ml-auto whitespace-nowrap rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50">
+          ⬇ Xuất CSV
+        </button>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">

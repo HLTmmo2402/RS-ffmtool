@@ -23,7 +23,7 @@ export default async function OrdersPage() {
     .select(
       "id, order_date, platform, platform_order_id, platform_status, tracking_number, label_link, " +
       "customer_name, customer_contact, seller_note, order_value, seller_name_import, " +
-      "selling_accounts(name), seller:profiles!seller_id(full_name), " +
+      "selling_accounts(name), seller:profiles!orders_seller_id_fkey(full_name), " +
       "order_items(id, item_status, confirm_design, product_title, size, tracking_status)"
     )
     .order("order_date", { ascending: false, nullsFirst: false })

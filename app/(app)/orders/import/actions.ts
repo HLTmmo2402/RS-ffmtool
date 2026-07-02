@@ -183,13 +183,13 @@ export async function importParsedOrders(
     }
   }
 
+  // Chỉ chèn item cho ĐƠN MỚI (đơn cũ đã 'continue' ở trên) -> insert thẳng, không cần onConflict
+  // (unique index (order_id,source_line) là partial nên không dùng làm arbiter cho upsert được).
   let itemsInserted = 0;
   if (itemPayload.length) {
-    const { error: itErr, count } = await supabase
-      .from("order_items")
-      .upsert(itemPayload, { onConflict: "order_id,source_line", ignoreDuplicates: true, count: "exact" });
+    const { error: itErr } = await supabase.from("order_items").insert(itemPayload);
     if (itErr) return { ok: false, error: `Nạp sản phẩm lỗi: ${itErr.message}` };
-    itemsInserted = count ?? itemPayload.length;
+    itemsInserted = itemPayload.length;
   }
 
   revalidatePath("/orders");

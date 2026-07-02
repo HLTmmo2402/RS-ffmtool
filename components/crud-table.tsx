@@ -133,6 +133,7 @@ export function CrudTable({
   return (
     <div className="space-y-3">
       {/* Form thêm mới */}
+      {allowAdd && (
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-white p-3">
         {addCols.map((c) => (
           <div key={c.key} className="flex flex-col">
@@ -174,6 +175,7 @@ export function CrudTable({
           + Thêm
         </button>
       </div>
+      )}
 
       {/* Bảng dữ liệu */}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -215,12 +217,14 @@ export function CrudTable({
                     </td>
                   ))}
                   <td className="px-3 py-1 text-right">
+                    {allowDelete && (
                     <button
                       onClick={() => removeRow(row.id)}
                       className="text-xs text-red-600 hover:underline"
                     >
                       Xoá
                     </button>
+                    )}
                   </td>
                 </tr>
               ))

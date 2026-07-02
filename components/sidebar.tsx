@@ -8,15 +8,17 @@ type Item = { href: string; label: string; icon: string };
 
 const BASE: Item[] = [
   { href: "/dashboard", label: "Tổng quan", icon: "📊" },
+  { href: "/today", label: "Việc hôm nay", icon: "🔔" },
   { href: "/orders/new", label: "Nhập đơn", icon: "📝" },
   { href: "/orders", label: "Đơn hàng", icon: "📦" },
+  { href: "/by-seller", label: "Theo seller", icon: "📈" },
   { href: "/orders/import", label: "Import", icon: "⬆️" },
   { href: "/templates", label: "Template", icon: "🎨" },
   { href: "/factories", label: "Xưởng", icon: "🏭" },
   { href: "/selling-accounts", label: "TK bán", icon: "🏷️" },
 ];
 
-export function Sidebar({ role, userName, userRole }: { role?: string; userName: string; userRole: string }) {
+export function Sidebar({ role, userName, userRole, todayCount = 0 }: { role?: string; userName: string; userRole: string; todayCount?: number }) {
   const p = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -39,6 +41,12 @@ export function Sidebar({ role, userName, userRole }: { role?: string; userName:
               (active ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100")}>
             <span className="w-5 text-center text-base leading-none">{l.icon}</span>
             <span className="font-medium">{l.label}</span>
+            {l.href === "/today" && todayCount > 0 && (
+              <span className={"ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                (active ? "bg-white/20 text-white" : "bg-red-100 text-red-700")}>
+                {todayCount}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -58,13 +66,14 @@ export function Sidebar({ role, userName, userRole }: { role?: string; userName:
       </div>
       {nav}
       <div className="border-t border-slate-200 p-3">
-        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5">
+        <Link href="/profile" onClick={() => setOpen(false)}
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-100">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">{initials}</span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{userName}</div>
             <div className="text-[11px] text-slate-400">{userRole}</div>
           </div>
-        </div>
+        </Link>
         <form action="/auth/signout" method="post" className="mt-1">
           <button className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100">
             Đăng xuất
