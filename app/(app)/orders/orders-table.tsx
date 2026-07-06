@@ -3,26 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import type { Order, OrderItemLite } from "@/lib/types";
-
-// Tiến độ đơn = rollup từ trạng thái các sản phẩm (khớp view v_order_status).
-function stage(items: OrderItemLite[]): { label: string; cls: string } {
-  const S = (k: string) => ({ label: k, cls: "" });
-  if (!items.length) return { label: "Mới", cls: "bg-slate-100 text-slate-600" };
-  const has = (s: string) => items.some((i) => i.item_status === s);
-  const all = (s: string) => items.every((i) => i.item_status === s);
-  if (has("issue")) return { label: "Sự cố", cls: "bg-red-100 text-red-700" };
-  if (all("cancelled")) return { label: "Đã huỷ", cls: "bg-slate-200 text-slate-600" };
-  if (all("delivered")) return { label: "Đã giao", cls: "bg-emerald-100 text-emerald-700" };
-  if (has("synced")) return { label: "Đã sync", cls: "bg-teal-100 text-teal-700" };
-  if (has("has_tracking")) return { label: "Có tracking", cls: "bg-blue-100 text-blue-700" };
-  if (has("in_production")) return { label: "Đang sản xuất", cls: "bg-indigo-100 text-indigo-700" };
-  if (has("ordered")) return { label: "Chờ FFM đẩy", cls: "bg-amber-100 text-amber-700" };
-  if (has("design_ok")) return { label: "Design OK", cls: "bg-lime-100 text-lime-700" };
-  if (has("waiting_design")) return { label: "Chờ design", cls: "bg-orange-100 text-orange-700" };
-  void S;
-  return { label: "Mới", cls: "bg-slate-100 text-slate-600" };
-}
+import type { Order } from "@/lib/types";
+import { stageOf, statusMeta } from "@/lib/status";
+import { StatusBadge, Badge } from "@/components/ui";
 
 export function OrdersTable({ initialData }: { initialData: Order[] }) {
   const [data] = useState<Order[]>(initialData);
@@ -40,7 +23,7 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
     const body = rows.map((o) => [
       o.order_date ?? "", o.platform_order_id, o.platform, o.selling_account_name ?? "",
       o.seller_name ?? "", o.customer_name ?? "", o.customer_contact ?? "",
-      stage(o.items).label, o.platform_status ?? "", o.tracking_number ?? "",
+      statusMeta(stageOf(o.items)).label, o.platform_status ?? "", o.tracking_number ?? "",
       o.order_value ?? "", o.seller_note ?? "",
       o.items.map((i) => `${i.product_title ?? ""}${i.size ? " (" + i.size + ")" : ""}`).join(" | "),
     ].map(esc).join(","));
@@ -98,7 +81,6 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
                 {data.length ? "Không có đơn khớp tìm kiếm." : "Chưa có đơn nào. Nhập đơn hoặc Import để bắt đầu."}
               </td></tr>
             ) : rows.map((o) => {
-              const s = stage(o.items);
               return (
                 <tr key={o.id} className="border-t border-slate-100 align-top hover:bg-slate-50">
                   <td className="whitespace-nowrap px-3 py-1.5">
@@ -107,9 +89,7 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
                   <td className="whitespace-nowrap px-3 py-1.5">
                     <Link href={`/orders/${o.id}`} className="text-blue-600 hover:underline">{o.platform_order_id}</Link>
                     {o.items.length > 1 && (
-                      <span className="ml-1 rounded bg-purple-100 px-1.5 text-xs text-purple-700" title="Đơn nhiều sản phẩm">
-                        {o.items.length} SP
-                      </span>
+                      <Badge tone="blue" className="ml-1" >{o.items.length} SP</Badge>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-1.5">{o.selling_account_name ?? "—"}</td>
@@ -119,7 +99,7 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
                     {o.customer_contact && <div className="text-xs text-slate-400">{o.customer_contact}</div>}
                   </td>
                   <td className="whitespace-nowrap px-3 py-1.5">
-                    <span className={"rounded px-2 py-0.5 text-xs " + s.cls}>{s.label}</span>
+                    <StatusBadge status={stageOf(o.items)} />
                   </td>
                   <td className="whitespace-nowrap px-3 py-1.5">
                     {o.platform_status ? <span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{o.platform_status}</span> : "—"}
@@ -130,7 +110,7 @@ export function OrdersTable({ initialData }: { initialData: Order[] }) {
                       {o.label_link && <a href={o.label_link} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">label</a>}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-1.5">{o.order_value != null ? `$${o.order_value}` : "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-1.5">{o.order_value != null ? "$" + Number(o.order_value).toLocaleString("en-US") : "—"}</td>
                   <td className="px-3 py-1.5">
                     <div className="max-w-[220px] truncate">
                       {o.items[0]?.product_title ?? "—"}{o.items[0]?.size ? ` · ${o.items[0].size}` : ""}

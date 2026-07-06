@@ -39,8 +39,8 @@ export function PermMatrix({ users }: { users: U[] }) {
               <th className="sticky left-0 bg-slate-100 px-3 py-2 font-medium text-slate-600">Người dùng</th>
               {MODULES.map((m) => (
                 <th key={m.key} className="px-2 py-2 text-center font-medium text-slate-600" title={m.label}>
-                  <span className="block text-base">{m.icon}</span>
-                  <span className="text-[10px] leading-none">{m.label}</span>
+                  <m.icon className="mx-auto mb-0.5 h-4 w-4 text-slate-500" />
+                  <span className="text-xs leading-none">{m.label}</span>
                 </th>
               ))}
               <th className="px-3 py-2"></th>

@@ -1,20 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { STAGE_GROUPS } from "@/lib/status";
+import { StatusBadge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-const STAGE: Record<string, { label: string; cls: string }> = {
-  issue: { label: "Sự cố", cls: "bg-red-100 text-red-700" },
-  cancelled: { label: "Huỷ", cls: "bg-slate-200 text-slate-600" },
-  delivered: { label: "Đã giao", cls: "bg-emerald-100 text-emerald-700" },
-  synced: { label: "Đã sync", cls: "bg-teal-100 text-teal-700" },
-  has_tracking: { label: "Có tracking", cls: "bg-blue-100 text-blue-700" },
-  in_production: { label: "Đang SX", cls: "bg-indigo-100 text-indigo-700" },
-  ordered: { label: "Chờ đẩy", cls: "bg-amber-100 text-amber-700" },
-  design_ok: { label: "Design OK", cls: "bg-lime-100 text-lime-700" },
-  waiting_design: { label: "Chờ design", cls: "bg-orange-100 text-orange-700" },
-  new: { label: "Mới", cls: "bg-slate-100 text-slate-600" },
-};
 const OPEN = ["new", "waiting_design", "design_ok", "ordered", "in_production", "has_tracking"];
 
 type Stats = {
@@ -44,14 +34,7 @@ export default async function DashboardPage() {
 
   const s = (data ?? {}) as Stats;
   const cnt = (keys: string[]) => keys.reduce((n, k) => n + (s.stages?.[k] ?? 0), 0);
-  const dist = [
-    { k: "Chờ design", n: cnt(["new", "waiting_design"]), c: "bg-orange-400" },
-    { k: "Chờ FFM", n: cnt(["design_ok", "ordered"]), c: "bg-amber-400" },
-    { k: "Đang SX/ship", n: cnt(["in_production", "has_tracking"]), c: "bg-blue-400" },
-    { k: "Đã giao", n: cnt(["delivered", "synced"]), c: "bg-emerald-400" },
-    { k: "Sự cố", n: cnt(["issue"]), c: "bg-red-400" },
-    { k: "Huỷ", n: cnt(["cancelled"]), c: "bg-slate-300" },
-  ];
+  const dist = STAGE_GROUPS.map((g) => ({ k: g.label, n: cnt([...g.statuses]), c: g.bar }));
   const totalD = dist.reduce((a, d) => a + d.n, 0) || 1;
   const byDay = s.byDay ?? [];
   const maxDay = Math.max(1, ...byDay.map((x) => x.n));
@@ -145,14 +128,13 @@ export default async function DashboardPage() {
               {(s.recent ?? []).length === 0 ? (
                 <tr><td className="px-3 py-6 text-center text-slate-400">Chưa có đơn. Vào Import để nạp.</td></tr>
               ) : s.recent.map((o) => {
-                const st = STAGE[o.status] ?? STAGE.new;
                 return (
                   <tr key={o.id} className="border-t border-slate-100 first:border-0 hover:bg-slate-50">
                     <td className="whitespace-nowrap px-3 py-2 text-slate-400">{o.date ? new Date(o.date).toLocaleDateString("vi-VN") : "—"}</td>
                     <td className="px-2 py-2"><Link href={`/orders/${o.id}`} className="font-medium text-blue-600 hover:underline">{o.oid}</Link></td>
                     <td className="px-2 py-2">{o.seller ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{o.seller}</span> : ""}</td>
                     <td className="max-w-[140px] truncate px-2 py-2 text-slate-500">{o.customer ?? "—"}</td>
-                    <td className="px-3 py-2 text-right"><span className={"rounded px-2 py-0.5 text-xs " + st.cls}>{st.label}</span></td>
+                    <td className="px-3 py-2 text-right"><StatusBadge status={o.status} /></td>
                   </tr>
                 );
               })}
