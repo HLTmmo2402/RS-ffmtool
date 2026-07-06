@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -27,3 +28,10 @@ export function createClient() {
     }
   );
 }
+
+// getUser() dùng chung, cache trong 1 request (React cache) -> layout + page KHÔNG gọi lại 2-3 lần.
+export const getCurrentUser = cache(async () => {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+});

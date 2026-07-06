@@ -1,11 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { PermMatrix } from "./matrix";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
   if (me?.role !== "admin") {
     return <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">Trang này chỉ dành cho Admin.</div>;

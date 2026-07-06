@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { OrderDetail } from "./order-detail";
@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Page({ params }: { params: { id: string } }) {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   const [orderRes, meRes, facRes, accRes, faccRes] = await Promise.all([
     supabase

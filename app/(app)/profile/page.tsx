@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { ChangePassword } from "./change-password";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ const SCOPE_LABEL: Record<string, string> = { none: "không", own: "của mình"
 
 export default async function ProfilePage() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   const { data: p } = await supabase
     .from("profiles")
     .select("full_name, role, view_scope, edit_scope, delete_scope")

@@ -1,11 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { OrderSheet, type TemplateOpt, type AccountOpt } from "./order-sheet";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   const [tplRes, accRes, profRes] = await Promise.all([
     supabase

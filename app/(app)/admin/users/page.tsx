@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { CrudTable, type Col } from "@/components/crud-table";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ const columns: Col[] = [
 
 export default async function Page() {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
 
   if (me?.role !== "admin") {
