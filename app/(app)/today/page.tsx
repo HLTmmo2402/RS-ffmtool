@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
 import { TodayView, type TodayItem } from "./today-view";
 
 export const dynamic = "force-dynamic";
@@ -40,5 +40,7 @@ export default async function TodayPage() {
       </div>
     );
   }
-  return <TodayView items={items} today={today} />;
+  const me = await supabase.from("profiles").select("role").eq("id", (await getCurrentUser())?.id ?? "").maybeSingle();
+  const isFFM = me.data?.role === "ffm" || me.data?.role === "admin";
+  return <TodayView items={items} today={today} isFFM={isFFM} />;
 }
