@@ -1,5 +1,7 @@
 import { createClient, getCurrentUser } from "@/lib/supabase/server";
-import { CrudTable, type Col } from "@/components/crud-table";
+import { type Col } from "@/components/crud-table";
+import { PageHeader } from "@/components/ui";
+import { UsersTabs } from "./tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -30,30 +32,21 @@ export default async function Page() {
   const { data: me } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
 
   if (me?.role !== "admin") {
-    return (
-      <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
-        Trang này chỉ dành cho Admin.
-      </div>
-    );
+    return <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">Trang này chỉ dành cho Admin.</div>;
   }
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, view_scope, edit_scope, delete_scope")
-    .order("full_name");
+    .select("id, full_name, role, view_scope, edit_scope, delete_scope, allowed_modules")
+    .order("role").order("full_name");
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold">Người dùng & phân quyền</h1>
-      <p className="text-sm text-slate-500">
-        <b>Vai trò</b> = làm cột nào (seller/ffm/admin). <b>3 phạm vi độc lập</b> Xem/Sửa/Xoá
-        (none/own/all) — cấu hình riêng từng người. VD seller mới để Xem=<b>own</b>; seller tin tưởng /
-        trưởng nhóm set Xem=<b>all</b> để tra cứu &amp; care hộ. User tạo tự động khi đăng nhập lần đầu.
-      </p>
+      <PageHeader title="Người dùng & Phân quyền" sub="Vai trò + phạm vi Xem/Sửa/Xoá, và quyền hiển thị theo mục — cấu hình riêng từng người." />
       {error ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">{error.message}</div>
       ) : (
-        <CrudTable table="profiles" columns={columns} initial={data ?? []} allowAdd={false} allowDelete={false} />
+        <UsersTabs rows={data ?? []} columns={columns} />
       )}
     </div>
   );
