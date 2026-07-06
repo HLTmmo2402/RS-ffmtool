@@ -3,7 +3,11 @@
     "allow": [
       "Bash(pip install *)",
       "Bash(python -c \"import openpyxl; print\\('openpyxl', openpyxl.__version__\\)\")",
-      "Bash(python inspect.py)"
+      "Bash(python inspect.py)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'GĐ3: Đơn hàng - phân trang server \\(bỏ cap 500\\), lọc theo sàn/ngày/từ khoá + lọc tiến độ, bulk đổi trạng thái nhiều đơn \\(FFM\\) *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -67,3 +67,14 @@ export async function deleteOrderItem(itemId: string) {
   revalidatePath("/orders");
   return { ok: true as const };
 }
+
+// Cập nhật hàng loạt cho FFM: đổi trạng thái / gán xưởng cho MỌI item của các đơn được chọn.
+export async function bulkUpdateItems(orderIds: string[], patch: Record<string, unknown>) {
+  const supabase = createClient();
+  const fields = pick(patch, ITEM_COLS);
+  if (!orderIds.length || Object.keys(fields).length === 0) return { ok: false as const, error: "Thiếu dữ liệu." };
+  const { error } = await supabase.from("order_items").update(fields).in("order_id", orderIds);
+  if (error) return { ok: false as const, error: error.message };
+  revalidatePath("/orders");
+  return { ok: true as const };
+}
